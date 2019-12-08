@@ -1,0 +1,231 @@
+Groove is in the Heart (and the Data)
+========================================================
+author: Sara Stoudt (@sastoudt)
+date: December 10, 2019
+autosize: true
+
+<style>
+.reveal .slides{
+    width: 90% !important;  /* or other width */
+}
+</style>
+
+<style>
+.reveal .slides section .slideContent{
+    font-size: 18pt;
+}
+</style>
+
+"Without music, life would be a blank to me." - Jane Austen (Emma)
+========================================================
+
+So you want to analyze some music data?
+
+- [spotifyr](https://cran.r-project.org/web/packages/spotifyr/index.html)
+- [genius](https://cran.r-project.org/web/packages/genius/index.html)
+
+You'll need API keys for both:
+
+- [Spotify](https://developer.spotify.com/documentation/web-api/)
+- [Genius](https://docs.genius.com/)
+
+Get Summary Data
+========================================================
+
+[Code]((https://github.com/sastoudt/groove_is_in_the_heart_and_data/blob/master/1_getData_Nice.R)
+
+```{r,eval = F}
+top100_2019 <- spotifyr::get_playlist_tracks("37i9dQZF1EteKcFAfmqtzy")
+
+# track.artists
+# track.duration_ms
+# track.name
+# track.popularity
+# track.album.name
+# track.album.release_date
+```
+
+Get Audio Feature Data
+========================================================
+
+```{r, eval = F}
+top100_2019f <- spotifyr::get_playlist_audio_features(username="sstoudt",
+                                                      "37i9dQZF1EteKcFAfmqtzy")
+
+# danceability
+# energy
+# loudness
+# speechiness
+# acousticness
+# instrumentalness
+# liveness
+# valence
+# tempo
+
+```
+
+Get Lyrics
+========================================================
+
+```{r, eval=F}
+artists <- purrr::map(top100_2019$track.artists, ~.x[1,"name"]) %>% unlist()
+
+track_name <- top100_2019$track.name
+
+safe_lyrics <- purrr::safely(genius::genius_lyrics)
+
+lyrics19 <- map2(artists, track_name, safe_lyrics)
+```
+
+```{r,echo = F}
+setwd("/Users/Sara/Desktop/rLadiesMusicTalk")
+load("lyrics19.RData")
+library(kableExtra)
+kable(lyrics19[[1]]$result[11:18, ]) %>% kable_styling()
+```
+
+Summaries
+========================================================
+
+[Code](https://github.com/sastoudt/groove_is_in_the_heart_and_data/blob/master/2_summaries_Nice.R)
+
+```{r,echo=F}
+setwd("~/Desktop/rLadiesMusicTalk")
+library(stringr)
+library(dplyr)
+library(ggplot2)
+library(scales)
+load(file = "top100_2016.RData")
+load(file = "top100_2017.RData")
+load(file = "top100_2018.RData")
+load(file = "top100_2019.RData")
+
+top100_2016$listYear <- rep(2016, 100)
+top100_2017$listYear <- rep(2017, 100)
+top100_2018$listYear <- rep(2018, 100)
+top100_2019$listYear <- rep(2019, 100)
+
+all <- rbind.data.frame(top100_2016, top100_2017, top100_2018, top100_2019)
+
+all$releaseYear <- str_sub(all$track.album.release_date, 1, 4)
+
+all$primaryArtist <- unlist(lapply(all$track.artists, function(x) {
+  x[1, "name"]
+}))
+
+```
+
+```{r}
+all %>% arrange(releaseYear) %>% select(track.name, primaryArtist, releaseYear) %>% head(10)  %>% kable() %>% kable_styling()
+```
+
+***
+
+```{r}
+all %>% group_by(primaryArtist, track.name) %>% summarize(count=n()) %>% arrange(desc(count)) %>% head(4) %>% kable() %>% kable_styling()
+
+all %>% group_by(primaryArtist) %>% summarize(count=n()) %>% arrange(desc(count)) %>% head(4)  %>% kable() %>% kable_styling()
+```
+
+Feature Analysis
+========================================================
+
+[Code](https://github.com/sastoudt/groove_is_in_the_heart_and_data/blob/master/3_features_Nice.R)
+
+```{r, echo=F,fig.height=12, fig.width=12}
+setwd("~/Desktop/rLadiesMusicTalk")
+
+load(file="top100_2016f.RData")
+load(file="top100_2017f.RData")
+load(file="top100_2018f.RData")
+load(file="top100_2019f.RData")
+
+top100_2016f$listYear=rep(2016, 101)
+top100_2017f$listYear=rep(2017, 100)
+top100_2018f$listYear=rep(2018, 100)
+top100_2019f$listYear=rep(2019, 100)
+
+all = rbind.data.frame(top100_2016f, top100_2017f, top100_2018f, top100_2019f)
+
+all$primaryArtist = unlist(lapply(all$track.artists, function(x){x[1,"name"]}))
+
+source("fix_ggradar.R")
+
+source("helper_plot.R")
+
+characteristics <- c("danceability", "energy", "loudness", "speechiness", "acousticness", "instrumentalness", "liveness", "valence")
+
+charSum <- all[, c(characteristics, "listYear")] %>%
+  group_by(listYear) %>%
+  summarise(
+    meanDanceability = mean(danceability), meanEnergy = mean(energy),
+    meanLoudness = mean(loudness), meanSpeechiness = mean(speechiness),
+    meanAcousticness = mean(acousticness), meanInstrumentalness = mean(instrumentalness), meanLiveness = mean(liveness), meanValence = mean(valence),
+    varDanceability = var(danceability), varEnergy = var(energy),
+    varLoudness = var(loudness), varSpeechiness = var(speechiness),
+    varAcousticness = var(acousticness), varInstrumentalness = var(instrumentalness), varLiveness = var(liveness), varValence = var(valence)
+  )
+
+add <- cbind.data.frame(album_name = "avg", t(apply(all[, c(characteristics)], 2, mean)))
+
+
+meanStuff <- charSum[, 1:9]
+names(add) <- names(meanStuff)
+meanStuff <- rbind.data.frame(meanStuff, add)
+varStuff <- charSum[, c(1, 10:17)]
+
+
+toP <- meanStuff %>% mutate_at(vars(-listYear), rescale)
+
+base <- ggradar2(toP[-nrow(toP), ])
+
+helperPlot(base)
+```
+
+***
+
+```{r}
+all %>% group_by(listYear) %>%
+  top_n(n = 1, wt = acousticness) %>%  select(primaryArtist, track.name, listYear)  %>% kable() %>% kable_styling()
+
+all %>% group_by(listYear) %>%
+  top_n(n = 1, wt = liveness) %>%  select(primaryArtist, track.name, listYear)  %>% kable() %>% kable_styling()
+```
+
+
+Sentiment Analysis
+========================================================
+
+[Code](https://github.com/sastoudt/groove_is_in_the_heart_and_data/blob/master/4_lyrics_Nice.R)
+
+```{r, echo=F}
+library(sentimentr)
+
+test = lapply(lyrics19, function(x){x$result})
+
+allL = do.call("rbind",test)
+
+allSentiment <- sentiment(allL$lyric)
+
+allL$id = 1:nrow(allL)
+
+allL2 = merge(allSentiment, allL, by.x="element_id", by.y="id")
+
+allL3 = allL2 %>% group_by(track_title) %>% summarise(meanSentiment = mean(sentiment)) 
+```
+
+```{r}
+
+allL3 %>% arrange(desc(meanSentiment)) %>% head(5) %>% kable() %>% kable_styling()
+
+allL3 %>% arrange(meanSentiment) %>% head(5) %>% kable() %>% kable_styling()
+
+
+```
+***
+```{r}
+
+ggplot(allL3, aes(meanSentiment))+
+  geom_histogram()+theme_minimal()
+
+```
